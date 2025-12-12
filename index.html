@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>RSS Feed Aggregator</title>
+</head>
+<body>
+<h1>Latest Articles</h1>
+<ul id="articles"></ul>
+<script>
+fetch('result.xml')
+  .then(r => r.text())
+  .then(str => (new window.DOMParser()).parseFromString(str, "text/xml"))
+  .then(data => {
+    const items = data.querySelectorAll('item');
+    const list = document.getElementById('articles');
+    items.forEach(item => {
+      const li = document.createElement('li');
+      const link = item.querySelector('link').textContent;
+      const title = item.querySelector('title').textContent;
+      li.innerHTML = `<a href="${link}">${title}</a>`;
+      list.appendChild(li);
+    });
+  });
+</script>
+</body>
+</html>
