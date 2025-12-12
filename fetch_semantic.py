@@ -17,54 +17,51 @@ FEEDS = [
 ]
 
 OUTFILE = "result.xml"
-MAX_ITEMS = 1000          # Max total items in XML
-MAX_FEED_ITEMS = 50       # Max items per feed per fetch
+MAX_ITEMS = 1000
+MAX_FEED_ITEMS = 50           # max items checked per feed
+MAX_EXISTING_CHECK = 50       # compare only with last 50 items
+SIM_THRESHOLD = 0.88
 BLOCK = ["/sport/", "/sports/", "/entertainment/"]
-SIM_THRESHOLD = 0.88      # Semantic similarity threshold
-SLEEP_SECONDS = 300       # 5 minutes
+
+SLEEP_SECONDS = 300           # 5 minutes
+
 
 # -----------------------------
-# LOAD OR INITIALIZE XML
+# Initialize XML
 # -----------------------------
 def load_existing():
     if not os.path.exists(OUTFILE):
         root = ET.Element("rss")
         chan = ET.SubElement(root, "channel")
         ET.ElementTree(root).write(OUTFILE, encoding="utf-8", xml_declaration=True)
+
     tree = ET.parse(OUTFILE)
     return tree, tree.getroot().find("channel")
 
+
 # -----------------------------
-# SEMANTIC MODEL
+# Model
 # -----------------------------
 model = SentenceTransformer('all-MiniLM-L6-v2')
 
-def embed_title(title):
-    return model.encode(title, convert_to_numpy=True)
+def embed_title(t):
+    return model.encode(t, convert_to_numpy=True)
 
-def title_similar_semantic(a_embed, b_embed, threshold=SIM_THRESHOLD):
-    sim = cosine_similarity([a_embed], [b_embed])[0][0]
-    return sim >= threshold
 
-# -----------------------------
-# CHECK EXISTING
-# -----------------------------
-def exists_semantic(existing_embeds, title):
-    t_embed = embed_title(title)
-    for e_embed in existing_embeds:
-        if title_similar_semantic(t_embed, e_embed):
-            return True
-    return False
+def semantic_match(embed_a, embed_b):
+    return cosine_similarity([embed_a], [embed_b])[0][0] >= SIM_THRESHOLD
+
 
 # -----------------------------
-# BLOCK LINKS
+# Block unwanted urls
 # -----------------------------
-def blocked(link):
-    link = link.lower()
-    return any(x in link for x in BLOCK)
+def blocked(url):
+    url = url.lower()
+    return any(b in url for b in BLOCK)
+
 
 # -----------------------------
-# ADD ITEM AT TOP
+# Add at top
 # -----------------------------
 def add_item(channel, entry):
     item = ET.Element("item")
@@ -72,7 +69,7 @@ def add_item(channel, entry):
     ET.SubElement(item, "link").text = entry.get("link", "")
     ET.SubElement(item, "pubDate").text = entry.get("published", datetime.utcnow().isoformat())
 
-    # Insert at top
+    # Move current children down, insert new at top
     children = list(channel)
     for child in children:
         channel.remove(child)
@@ -80,43 +77,65 @@ def add_item(channel, entry):
     for child in children:
         channel.append(child)
 
-    # Enforce max total items
+    # enforce max size
     items = channel.findall("item")
     if len(items) > MAX_ITEMS:
         for old in items[MAX_ITEMS:]:
             channel.remove(old)
 
+
 # -----------------------------
-# FETCH ONCE
+# Fetch Once
 # -----------------------------
 def fetch_once():
     tree, channel = load_existing()
-    # Precompute embeddings of existing titles
-    existing_titles = [item.findtext("title","") for item in channel.findall("item")]
+
+    # Get newest 50 existing titles
+    existing_items = channel.findall("item")[:MAX_EXISTING_CHECK]
+    existing_titles = [i.findtext("title", "") for i in existing_items]
     existing_embeds = [embed_title(t) for t in existing_titles]
 
     for url in FEEDS:
         feed = feedparser.parse(url)
+
         count = 0
-        for e in feed.entries:
-            if count >= MAX_FEED_ITEMS:
-                break
-            title = e.get("title", "")
-            link = e.get("link", "")
+        for entry in feed.entries[:MAX_FEED_ITEMS]:  # max check 50 per feed
+            title = entry.get("title", "")
+            link = entry.get("link", "")
+
             if not title or not link:
                 continue
             if blocked(link):
                 continue
-            if exists_semantic(existing_embeds, title):
+
+            # embed once per new title
+            new_emb = embed_title(title)
+
+            # compare only against last 50 existing
+            duplicate = False
+            for old_emb in existing_embeds:
+                if semantic_match(new_emb, old_emb):
+                    duplicate = True
+                    break
+
+            if duplicate:
                 continue
-            add_item(channel, e)
-            existing_embeds.append(embed_title(title))  # Update embeddings dynamically
+
+            # New article
+            add_item(channel, entry)
+            existing_embeds.insert(0, new_emb)   # update top
+            existing_embeds = existing_embeds[:MAX_EXISTING_CHECK]
+
             count += 1
+
+            if count >= MAX_FEED_ITEMS:
+                break
 
     tree.write(OUTFILE, encoding="utf-8", xml_declaration=True)
 
+
 # -----------------------------
-# MAIN LOOP (EVERY 5 MINUTES)
+# Loop
 # -----------------------------
 if __name__ == "__main__":
     while True:
