@@ -17,9 +17,11 @@ FEEDS = [
 ]
 
 OUTFILE = "result.xml"
-MAX_ITEMS = 1000
+MAX_ITEMS = 1000          # Max total items in XML
+MAX_FEED_ITEMS = 50       # Max items per feed per fetch
 BLOCK = ["/sport/", "/sports/", "/entertainment/"]
-SIM_THRESHOLD = 0.88  # semantic similarity threshold
+SIM_THRESHOLD = 0.88      # Semantic similarity threshold
+SLEEP_SECONDS = 300       # 5 minutes
 
 # -----------------------------
 # LOAD OR INITIALIZE XML
@@ -78,7 +80,7 @@ def add_item(channel, entry):
     for child in children:
         channel.append(child)
 
-    # Enforce max items
+    # Enforce max total items
     items = channel.findall("item")
     if len(items) > MAX_ITEMS:
         for old in items[MAX_ITEMS:]:
@@ -95,7 +97,10 @@ def fetch_once():
 
     for url in FEEDS:
         feed = feedparser.parse(url)
+        count = 0
         for e in feed.entries:
+            if count >= MAX_FEED_ITEMS:
+                break
             title = e.get("title", "")
             link = e.get("link", "")
             if not title or not link:
@@ -105,6 +110,9 @@ def fetch_once():
             if exists_semantic(existing_embeds, title):
                 continue
             add_item(channel, e)
+            existing_embeds.append(embed_title(title))  # Update embeddings dynamically
+            count += 1
+
     tree.write(OUTFILE, encoding="utf-8", xml_declaration=True)
 
 # -----------------------------
@@ -113,4 +121,4 @@ def fetch_once():
 if __name__ == "__main__":
     while True:
         fetch_once()
-        time.sleep(300)
+        time.sleep(SLEEP_SECONDS)
