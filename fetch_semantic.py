@@ -24,7 +24,7 @@ MAX_TOTAL = 1000
 MAX_PER_FEED = 50
 MAX_EXIST = 50
 SIM_THRESH = 0.88
-BLOCK_PARTS = ("/sport/", "/sports/", "/entertainment/")
+BLOCK_PARTS = ("/sport/", "/sports/", "/entertainment/", "/videos/", "/video/")
 IMG_RE = re.compile(r'<img[^>]+src="([^"]+)"')
 
 # load semantic model once
