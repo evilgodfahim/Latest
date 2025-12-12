@@ -4,22 +4,32 @@ name: RSS Fetch
 on:
   schedule:
     - cron: '*/5 * * * *'  # every 5 minutes
+  workflow_dispatch:        # allows manual trigger
 
 jobs:
   fetch:
     runs-on: ubuntu-latest
+
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
       - name: Setup Python
         uses: actions/setup-python@v4
         with:
           python-version: 3.11
-      - run: pip install feedparser fuzzywuzzy python-Levenshtein
-      - run: python fetch.py
-      - name: Commit & Push
+
+      - name: Install dependencies
+        run: |
+          pip install feedparser fuzzywuzzy python-Levenshtein
+
+      - name: Run RSS fetch script
+        run: python fetch.py
+
+      - name: Commit and push updated XML
         run: |
           git config user.name "github-actions"
           git config user.email "actions@github.com"
           git add result.xml
-          git commit -m "Update RSS feed"
+          git commit -m "Update RSS feed" || echo "No changes to commit"
           git push
