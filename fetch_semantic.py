@@ -14,7 +14,7 @@ FEEDS = [
     "http://www.thedailystar.net/latest/rss/rss.xml",
     "https://tbsnews.net/top-news/rss.xml",
     "https://www.dhakatribune.com/feed/",
-    "https://evilgodfahim.github.io/ds/todays-news.xml"
+    "https://evilgodfahim.github.io/ds/todays_news.xml"
 ]
 
 RESULT_XML = "result.xml"
