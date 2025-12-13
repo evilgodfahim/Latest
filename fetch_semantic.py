@@ -149,7 +149,10 @@ def run_once():
     
     current_time = datetime.utcnow().isoformat()
     new_items_added = 0
-
+    
+    # Collect ALL candidates from ALL feeds first
+    all_candidates = []
+    
     for feed_url in FEEDS:
         feed = feedparser.parse(feed_url)
         entries = feed.entries[:MAX_PER_FEED]
@@ -157,9 +160,7 @@ def run_once():
         if not entries:
             continue
 
-        # Filter out blocked entries first
-        valid_entries = []
-        valid_titles = []
+        # Filter out blocked entries
         for entry in entries:
             link = entry.get("link", "").lower()
             if any(b in link for b in BLOCK_PARTS):
@@ -167,37 +168,56 @@ def run_once():
             title = entry.get("title", "")
             if not title:
                 continue
-            valid_entries.append(entry)
-            valid_titles.append(title)
-        
-        if not valid_titles:
+            all_candidates.append(entry)
+    
+    if not all_candidates:
+        save_cache(cache)
+        tree.write(RESULT_XML, "utf-8", xml_declaration=True)
+        print("No new candidates found.")
+        return
+    
+    # Batch embed ALL candidates at once (single embedding call)
+    all_titles = [e.get("title", "") for e in all_candidates]
+    cand_vecs = embed_batch(all_titles)
+    cand_norm = cand_vecs / np.linalg.norm(cand_vecs, axis=1, keepdims=True)
+    
+    # Check against existing embeddings
+    if existing_vecs.size > 0:
+        sims_existing = cand_norm @ existing_vecs.T
+        dup_mask = sims_existing.max(axis=1) >= SIM_THRESH
+    else:
+        dup_mask = np.array([False] * len(all_candidates))
+    
+    # Now process candidates and check for duplicates within the batch
+    added_indices = []
+    added_vecs = []
+    
+    for i, entry in enumerate(all_candidates):
+        # Skip if duplicate with existing
+        if dup_mask[i]:
             continue
-
-        # Batch embed all valid titles at once
-        cand_vecs = embed_batch(valid_titles)
-        cand_norm = cand_vecs / np.linalg.norm(cand_vecs, axis=1, keepdims=True)
-
-        # Check for duplicates
-        if existing_vecs.size > 0:
-            sims = cand_norm @ existing_vecs.T
-            dup_mask = sims.max(axis=1) >= SIM_THRESH
-        else:
-            dup_mask = np.array([False] * len(valid_entries))
-
-        # Add new items
-        for i, entry in enumerate(valid_entries):
-            if dup_mask[i]:
+        
+        # Check against already added items in THIS run
+        if added_vecs:
+            added_matrix = np.vstack(added_vecs)
+            sims_new = cand_norm[i:i+1] @ added_matrix.T
+            if sims_new.max() >= SIM_THRESH:
                 continue
-            
-            title = valid_titles[i]
-            img = find_image(entry)
-            item = make_item(entry, img)
-            channel.insert(3, item)
-            
-            # Update cache with new title and embedding
-            cache["embeds"][title] = cand_vecs[i].tolist()
-            cache["title_log"][title] = current_time
-            new_items_added += 1
+        
+        # Not a duplicate - add it
+        title = all_titles[i]
+        img = find_image(entry)
+        item = make_item(entry, img)
+        channel.insert(3, item)
+        
+        # Update cache with new title and embedding
+        cache["embeds"][title] = cand_vecs[i].tolist()
+        cache["title_log"][title] = current_time
+        
+        # Track for within-run duplicate checking
+        added_indices.append(i)
+        added_vecs.append(cand_norm[i])
+        new_items_added += 1
 
     # Trim items if exceeding MAX_TOTAL
     items = channel.findall("item")
