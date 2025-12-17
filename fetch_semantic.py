@@ -15,7 +15,8 @@ FEEDS = [
     "https://tbsnews.net/top-news/rss.xml",
     "https://www.dhakatribune.com/feed/",
     "https://evilgodfahim.github.io/ds/todays_news.xml",
-"https://evilgodfahim.github.io/gd/merged.xml"
+"https://evilgodfahim.github.io/gd/merged.xml",
+"https://evilgodfahim.github.io/bangladesh/feed.xml"
 ]
 
 RESULT_XML = "result.xml"
